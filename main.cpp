@@ -1,36 +1,49 @@
 #include "mpi.h"
+#include <vector>
+#include <numeric>
 #include <iostream>
+#include <unistd.h>
 
 using namespace std;
 
 int main(int argc, char **argv)
 {
+    // For MPI Debugging
+    int i = 1;
+    while (0 == i)
+        sleep(5);
+
     MPI_Init(&argc, &argv);
 
     int myRank{}, worldSize{};
     MPI_Comm_rank(MPI_COMM_WORLD, &myRank);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
 
-    int myArray[myRank+worldSize];
-    for (int i = 0; i < myRank+worldSize; ++i)
+    vector<int> myVec(1 + myRank + worldSize);
+    iota(begin(myVec), end(myVec), 0);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    vector<int> vecSizes(worldSize);
+    int mySize = myVec.size();
+    MPI_Allgather(&mySize, 1, MPI_INT, vecSizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+    vector<int> displs(worldSize);
+    for (int i = 0; i < worldSize; ++i)
     {
-        myArray[i] = i + myRank;
+        displs[i] = accumulate(vecSizes.begin(), vecSizes.begin() + i, 0);
     }
 
-    int recvBuff[5]; // Let's assume we are running with 2 processes
-    int recvCounts[] = {2,3};
-    int disp[] = {0, 2};
-    MPI_Allgatherv(myArray, myRank + worldSize, MPI_INT, recvBuff, recvCounts, disp, MPI_INT, MPI_COMM_WORLD);
+    vector<int> allData(accumulate(vecSizes.begin(), vecSizes.end(), 0));
+    MPI_Allgatherv(myVec.data(), vecSizes[myRank], MPI_INT, allData.data(), vecSizes.data(), displs.data(), MPI_INT, MPI_COMM_WORLD);
 
     {
         cout << "\nI am CPU " << myRank << ".\n[";
-        for (int j = 0; j<5; j++)
+        for (auto j : allData)
         {
             cout << j << ", ";
         }
         cout << "\b\b].\n";
     }
-    
+
     MPI_Finalize();
     return 0;
 }
